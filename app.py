@@ -12,22 +12,29 @@ st.set_page_config(
     layout="wide"
 )
 
-# Hugging Face API configuration
-API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
-# Alternative models:
-# "stabilityai/stable-diffusion-2-1"
-# "prompthero/openjourney"
+# Hugging Face API configuration - เลือก model ที่ใช้งานได้
+AVAILABLE_MODELS = {
+    "Stable Diffusion v1.5": "runwayml/stable-diffusion-v1-5",
+    "Stable Diffusion v2.1": "stabilityai/stable-diffusion-2-1", 
+    "Openjourney v4": "prompthero/openjourney-v4",
+    "Realistic Vision": "SG161222/Realistic_Vision_V2.0",
+    "Deliberate": "XpucT/Deliberate"
+}
 
-def query_huggingface_api(payload, api_token=None):
+# Default model (most reliable)
+DEFAULT_MODEL = "runwayml/stable-diffusion-v1-5"
+
+def query_huggingface_api(payload, model_name, api_token=None):
     """Query Hugging Face Inference API"""
-    headers = {}
+    api_url = f"https://api-inference.huggingface.co/models/{model_name}"
+    headers = {"Content-Type": "application/json"}
     if api_token:
         headers["Authorization"] = f"Bearer {api_token}"
     
-    response = requests.post(API_URL, headers=headers, json=payload)
+    response = requests.post(api_url, headers=headers, json=payload)
     return response
 
-def generate_image_api(prompt, api_token=None):
+def generate_image_api(prompt, model_name=DEFAULT_MODEL, api_token=None):
     """Generate image using Hugging Face API"""
     try:
         payload = {
@@ -40,13 +47,15 @@ def generate_image_api(prompt, api_token=None):
             }
         }
         
-        response = query_huggingface_api(payload, api_token)
+        response = query_huggingface_api(payload, model_name, api_token)
         
         if response.status_code == 200:
             image = Image.open(io.BytesIO(response.content))
             return image, None
         elif response.status_code == 503:
             return None, "Model is loading, please wait a few minutes and try again."
+        elif response.status_code == 404:
+            return None, f"Model '{model_name}' not found. Please try a different model."
         else:
             try:
                 error_msg = response.json().get('error', 'Unknown error')
@@ -67,6 +76,15 @@ def main():
     with st.sidebar:
         st.header("⚙️ Settings")
         st.info("💡 ใช้ Hugging Face API - รวดเร็วและไม่กิน memory")
+        
+        # Model selection
+        selected_model_name = st.selectbox(
+            "🤖 Select AI Model",
+            options=list(AVAILABLE_MODELS.keys()),
+            index=0,
+            help="เลือก AI model ที่ต้องการใช้"
+        )
+        selected_model = AVAILABLE_MODELS[selected_model_name]
         
         api_token = st.text_input(
             "🔑 Hugging Face API Token (Optional)", 
@@ -174,7 +192,7 @@ def main():
                         time.sleep(0.1)
                     
                     # Generate image
-                    image, error = generate_image_api(enhanced_prompt, api_token if api_token else None)
+                    image, error = generate_image_api(enhanced_prompt, selected_model, api_token if api_token else None)
                     
                     progress_bar.empty()
                     status_text.empty()
@@ -251,7 +269,7 @@ def main():
     with st.expander("🔧 Technical Information"):
         st.markdown(f"""
         - **API Endpoint**: Hugging Face Inference API
-        - **Model**: runwayml/stable-diffusion-v1-5
+        - **Selected Model**: {selected_model_name} ({selected_model})
         - **Resolution**: 512x512 pixels
         - **Inference Steps**: 20 (optimized for speed)
         - **Status**: {"🟢 API Token Connected" if api_token else "🟡 Using Free Tier"}
