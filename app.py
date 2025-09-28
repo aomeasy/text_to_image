@@ -3,7 +3,6 @@ import requests
 import io
 from PIL import Image
 import time
-import base64
 
 # Configure page
 st.set_page_config(
@@ -12,277 +11,225 @@ st.set_page_config(
     layout="wide"
 )
 
-# Hugging Face API configuration - เลือก model ที่ใช้งานได้
-AVAILABLE_MODELS = {
-    "Stable Diffusion v1.5": "runwayml/stable-diffusion-v1-5",
-    "Stable Diffusion v2.1": "stabilityai/stable-diffusion-2-1", 
-    "Openjourney v4": "prompthero/openjourney-v4",
-    "Realistic Vision": "SG161222/Realistic_Vision_V2.0",
-    "Deliberate": "XpucT/Deliberate"
-}
+# Simple, working model that's always available
+API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
 
-# Default model (most reliable)
-DEFAULT_MODEL = "runwayml/stable-diffusion-v1-5"
-
-def query_huggingface_api(payload, model_name, api_token=None):
-    """Query Hugging Face Inference API"""
-    api_url = f"https://api-inference.huggingface.co/models/{model_name}"
+def generate_image_simple(prompt, api_token=None):
+    """Simple image generation that works"""
     headers = {"Content-Type": "application/json"}
     if api_token:
         headers["Authorization"] = f"Bearer {api_token}"
     
-    response = requests.post(api_url, headers=headers, json=payload)
-    return response
-
-def generate_image_api(prompt, model_name=DEFAULT_MODEL, api_token=None):
-    """Generate image using Hugging Face API"""
+    payload = {"inputs": prompt}
+    
     try:
-        payload = {
-            "inputs": prompt,
-            "parameters": {
-                "num_inference_steps": 20,
-                "guidance_scale": 7.5,
-                "width": 512,
-                "height": 512
-            }
-        }
-        
-        response = query_huggingface_api(payload, model_name, api_token)
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
         
         if response.status_code == 200:
             image = Image.open(io.BytesIO(response.content))
             return image, None
         elif response.status_code == 503:
-            return None, "Model is loading, please wait a few minutes and try again."
-        elif response.status_code == 404:
-            return None, f"Model '{model_name}' not found. Please try a different model."
+            return None, "🕐 Model is loading. Please wait 1-2 minutes and try again."
+        elif response.status_code == 429:
+            return None, "⚠️ Too many requests. Please wait a moment or use API token."
         else:
-            try:
-                error_msg = response.json().get('error', 'Unknown error')
-                return None, f"Error: {error_msg}"
-            except:
-                return None, f"HTTP Error: {response.status_code}"
-                
+            return None, f"❌ Error {response.status_code}. Try again in a few minutes."
+    except requests.exceptions.Timeout:
+        return None, "⏰ Request timeout. Please try again."
     except Exception as e:
-        return None, f"Request failed: {str(e)}"
+        return None, f"❌ Network error: {str(e)}"
 
-# Main app
 def main():
     # Header
     st.title("🎨 AI Image Generator")
     st.subheader("สร้างภาพสวยๆ ด้วย AI จาก Text Prompt")
     
-    # API Token input (optional)
+    # Sidebar
     with st.sidebar:
         st.header("⚙️ Settings")
-        st.info("💡 ใช้ Hugging Face API - รวดเร็วและไม่กิน memory")
-        
-        # Model selection
-        selected_model_name = st.selectbox(
-            "🤖 Select AI Model",
-            options=list(AVAILABLE_MODELS.keys()),
-            index=0,
-            help="เลือก AI model ที่ต้องการใช้"
-        )
-        selected_model = AVAILABLE_MODELS[selected_model_name]
+        st.info("🤖 Using Stable Diffusion v1.5")
         
         api_token = st.text_input(
-            "🔑 Hugging Face API Token (Optional)", 
+            "🔑 API Token (Optional)", 
             type="password",
-            help="ใส่ token เพื่อการใช้งานที่เร็วขึ้น และไม่มี rate limit"
+            help="Paste your Hugging Face token here"
         )
         
-        if st.button("🔗 Get Free API Token"):
-            st.markdown("[สมัครฟรีที่ Hugging Face](https://huggingface.co/settings/tokens)")
+        if st.button("🔗 Get API Token"):
+            st.markdown("[Get free token](https://huggingface.co/settings/tokens)")
         
         st.markdown("---")
-        st.markdown("**ข้อดีของการใช้ API:**")
-        st.markdown("✅ ไม่กิน memory ของ server")
-        st.markdown("✅ รวดเร็วกว่า")
-        st.markdown("✅ ไม่ต้องรอโหลด model")
-        st.markdown("✅ Stable และเชื่อถือได้")
+        st.markdown("**Status:**")
+        st.markdown("✅ Fast API-based generation")
+        st.markdown("✅ No server memory usage")
+        st.markdown("✅ Reliable and stable")
     
-    # Main interface
+    # Main content
     col1, col2 = st.columns([1, 1])
     
     with col1:
         st.header("📝 Input")
         
-        # Text input
         prompt = st.text_area(
             "Enter your prompt:",
-            value="a beautiful cat sitting in a garden, digital art, high quality",
+            value="a beautiful cat sitting in a garden, digital art",
             height=100,
-            help="อธิบายภาพที่คุณต้องการให้ AI สร้าง"
+            help="Describe the image you want to create"
         )
         
-        # Quality settings
-        st.subheader("🎯 Quality Settings")
-        
-        col_a, col_b = st.columns(2)
-        with col_a:
-            add_quality = st.checkbox("✨ Auto enhance quality", value=True)
-        with col_b:
-            add_style = st.selectbox(
-                "🎨 Art Style",
-                ["None", "digital art", "realistic", "cartoon", "anime", "oil painting", "watercolor"]
-            )
+        # Simple quality enhancement
+        enhance_quality = st.checkbox("✨ Enhance prompt automatically", value=True)
         
         # Generate button
-        generate_btn = st.button("🚀 Generate Image", type="primary", use_container_width=True)
-        
-        # Example prompts
-        st.subheader("💡 Example Prompts")
-        example_prompts = [
-            "beautiful sunset over mountains, digital art",
-            "cute cartoon robot, colorful, high quality",
-            "professional headshot, business attire, clean background",
-            "fantasy landscape, magical forest, detailed",
-            "modern city skyline at night, cinematic",
-            "abstract geometric art, vibrant colors",
-            "vintage car in retro style, detailed",
-            "space astronaut, cosmic background, realistic"
-        ]
-        
-        for i, example in enumerate(example_prompts):
-            if st.button(f"📋 {example[:40]}...", key=f"example_{i}"):
-                st.session_state.selected_prompt = example
+        if st.button("🚀 Generate Image", type="primary", use_container_width=True):
+            if len(prompt.strip()) < 3:
+                st.error("Please enter a prompt with at least 3 characters")
+            else:
+                # Store in session state to trigger generation
+                st.session_state.generate_request = True
+                st.session_state.current_prompt = prompt
+                st.session_state.enhance_quality = enhance_quality
                 st.rerun()
         
-        # Use example prompt if selected
-        if 'selected_prompt' in st.session_state:
-            prompt = st.session_state.selected_prompt
-            del st.session_state.selected_prompt
+        # Example prompts
+        st.subheader("💡 Try These Prompts")
+        examples = [
+            "beautiful landscape with mountains and trees",
+            "cute cartoon robot with colorful design",
+            "professional business portrait, modern style",
+            "fantasy castle in magical forest",
+            "modern city skyline at sunset",
+            "abstract art with vibrant colors"
+        ]
+        
+        for i, example in enumerate(examples):
+            if st.button(f"📝 {example[:35]}...", key=f"ex_{i}"):
+                st.session_state.selected_example = example
+                st.rerun()
+        
+        # Apply selected example
+        if 'selected_example' in st.session_state:
+            prompt = st.session_state.selected_example
+            del st.session_state.selected_example
+            st.rerun()
     
     with col2:
         st.header("🖼️ Generated Image")
         
-        if generate_btn and prompt:
-            if len(prompt.strip()) < 3:
-                st.warning("กรุณาใส่ prompt ที่ยาวกว่า 3 ตัวอักษร")
+        # Handle generation request
+        if st.session_state.get('generate_request', False):
+            st.session_state.generate_request = False
+            
+            current_prompt = st.session_state.get('current_prompt', prompt)
+            enhance = st.session_state.get('enhance_quality', True)
+            
+            # Enhance prompt if requested
+            if enhance:
+                enhanced_prompt = f"{current_prompt}, high quality, detailed, beautiful"
             else:
-                # Enhance prompt
-                enhanced_prompt = prompt
+                enhanced_prompt = current_prompt
+            
+            # Show what we're generating
+            with st.expander("🔍 Generating with prompt:"):
+                st.code(enhanced_prompt)
+            
+            # Generate image
+            with st.spinner("🎨 Creating your image... (30-60 seconds)"):
+                progress = st.progress(0)
+                status = st.empty()
                 
-                if add_quality:
-                    enhanced_prompt += ", high quality, detailed, beautiful"
-                
-                if add_style != "None":
-                    enhanced_prompt += f", {add_style}"
-                
-                # Show enhanced prompt
-                with st.expander("🔍 Enhanced Prompt"):
-                    st.code(enhanced_prompt)
-                
-                with st.spinner("กำลังสร้างภาพ... (15-30 วินาที)"):
-                    start_time = time.time()
-                    
-                    # Progress bar
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    for i in range(100):
-                        progress_bar.progress(i + 1)
-                        if i < 30:
-                            status_text.text("🚀 กำลังส่ง request...")
-                        elif i < 70:
-                            status_text.text("🎨 AI กำลังสร้างภาพ...")
-                        else:
-                            status_text.text("✨ เกือบเสร็จแล้ว...")
-                        time.sleep(0.1)
-                    
-                    # Generate image
-                    image, error = generate_image_api(enhanced_prompt, selected_model, api_token if api_token else None)
-                    
-                    progress_bar.empty()
-                    status_text.empty()
-                    end_time = time.time()
-                    generation_time = end_time - start_time
-                
-                if image:
-                    st.image(image, caption=f"Prompt: {prompt}", use_column_width=True)
-                    st.success(f"✨ สร้างภาพเสร็จแล้ว! (ใช้เวลา {generation_time:.1f} วินาที)")
-                    
-                    # Image info
-                    st.info(f"📏 ขนาด: {image.size[0]}x{image.size[1]} pixels")
-                    
-                    # Download button
-                    img_buffer = io.BytesIO()
-                    image.save(img_buffer, format='PNG')
-                    img_buffer.seek(0)
-                    
-                    st.download_button(
-                        label="💾 Download Image",
-                        data=img_buffer,
-                        file_name=f"ai_generated_{int(time.time())}.png",
-                        mime="image/png",
-                        use_container_width=True
-                    )
-                    
-                    # Store in session state
-                    st.session_state.last_image = image
-                    st.session_state.last_prompt = prompt
-                    
-                elif error:
-                    st.error(f"❌ {error}")
-                    
-                    if "loading" in error.lower():
-                        st.info("💡 Model กำลังโหลด รอ 2-3 นาทีแล้วลองใหม่")
-                    elif "rate limit" in error.lower() or "quota" in error.lower():
-                        st.warning("⚠️ Rate limit exceeded. ใช้ API token หรือรอสักครู่")
+                # Simulate progress
+                for i in range(100):
+                    progress.progress(i + 1)
+                    if i < 20:
+                        status.text("📡 Sending request...")
+                    elif i < 80:
+                        status.text("🎨 AI is creating your image...")
                     else:
-                        st.info("💡 ลองปรับ prompt หรือลองใหม่ในอีกสักครู่")
+                        status.text("✨ Almost done...")
+                    time.sleep(0.2)
+                
+                # Actual generation
+                image, error = generate_image_simple(enhanced_prompt, api_token)
+                
+                progress.empty()
+                status.empty()
+            
+            if image:
+                st.image(image, caption=f"Generated: {current_prompt}", use_column_width=True)
+                st.success("✅ Image generated successfully!")
+                
+                # Download button
+                buf = io.BytesIO()
+                image.save(buf, format='PNG')
+                buf.seek(0)
+                
+                st.download_button(
+                    "💾 Download Image",
+                    data=buf,
+                    file_name=f"ai_image_{int(time.time())}.png",
+                    mime="image/png",
+                    use_container_width=True
+                )
+                
+                # Store for persistence
+                st.session_state.last_image = image
+                st.session_state.last_prompt = current_prompt
+                
+            else:
+                st.error(error if error else "Failed to generate image")
+                
+                # Helpful suggestions
+                if "loading" in str(error).lower():
+                    st.info("💡 The AI model is starting up. Please wait 2-3 minutes and try again.")
+                elif "requests" in str(error).lower():
+                    st.info("💡 Try using an API token for unlimited generations.")
+                else:
+                    st.info("💡 Try a simpler prompt or wait a moment before trying again.")
         
+        # Show last generated image if available
         elif 'last_image' in st.session_state:
-            # Show last generated image
             st.image(
                 st.session_state.last_image, 
                 caption=f"Last generated: {st.session_state.last_prompt}", 
                 use_column_width=True
             )
         else:
-            st.info("👆 ใส่ prompt และกด Generate เพื่อสร้างภาพ")
-            
-            # Sample image
+            st.info("👆 Enter a prompt above and click 'Generate Image'")
             st.image(
-                "https://via.placeholder.com/512x512/f0f0f0/cccccc?text=Your+AI+Generated+Image+Will+Appear+Here", 
-                caption="รอการสร้างภาพ...", 
+                "https://via.placeholder.com/512x512/f0f0f0/cccccc?text=Your+AI+Image+Here",
+                caption="Your generated image will appear here",
                 use_column_width=True
             )
     
-    # Tips section
-    with st.expander("💡 Tips สำหรับ Prompt ที่ดี"):
+    # Tips
+    with st.expander("💡 Tips for Better Results"):
         st.markdown("""
-        **เทคนิคการเขียน Prompt:**
-        - ใช้คำอธิบายที่ชัดเจน: "red sports car" แทน "car"
-        - เพิ่มคำคุณภาพ: "high quality", "detailed", "beautiful"
-        - ระบุสไตล์: "digital art", "realistic", "cartoon"
-        - เพิ่มอารมณ์: "cheerful", "mysterious", "dramatic"
-        - ระบุแสง: "bright lighting", "sunset", "dramatic shadows"
+        **Good prompt examples:**
+        - "Beautiful sunset over ocean waves, digital art"
+        - "Cute cartoon cat wearing glasses, colorful"
+        - "Modern architecture building, minimalist design"
+        - "Fantasy dragon in mystical forest, detailed"
         
-        **ตัวอย่างการปรับปรุง:**
-        - ❌ "cat"
-        - ✅ "cute orange cat sitting in sunny garden, digital art, high quality"
-        """)
-    
-    # Technical info
-    with st.expander("🔧 Technical Information"):
-        st.markdown(f"""
-        - **API Endpoint**: Hugging Face Inference API
-        - **Selected Model**: {selected_model_name} ({selected_model})
-        - **Resolution**: 512x512 pixels
-        - **Inference Steps**: 20 (optimized for speed)
-        - **Status**: {"🟢 API Token Connected" if api_token else "🟡 Using Free Tier"}
+        **Tips:**
+        - Be specific about what you want
+        - Add style keywords like "digital art", "realistic", "cartoon"
+        - Include quality words like "detailed", "beautiful", "high quality"
+        - Describe colors, lighting, and mood
         """)
     
     # Footer
     st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; color: #666;'>
-        <p>🤖 Powered by <strong>Hugging Face</strong> | ⚡ API-based for better performance</p>
-        <p>💡 <strong>Tip:</strong> ใช้ API token เพื่อความเร็วและไม่มี rate limit</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        "<div style='text-align: center; color: #666;'>"
+        "<p>🤖 Powered by Stable Diffusion via Hugging Face API</p>"
+        "</div>", 
+        unsafe_allow_html=True
+    )
 
 if __name__ == "__main__":
+    # Initialize session state
+    if 'generate_request' not in st.session_state:
+        st.session_state.generate_request = False
+    
     main()
