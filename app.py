@@ -11,83 +11,70 @@ st.set_page_config(
     layout="wide"
 )
 
-# Get API token from Streamlit secrets (more secure)
-def get_api_token():
-    try:
-        # Try to get from Streamlit secrets first (deployed version)
-        return st.secrets["HUGGINGFACE_API_TOKEN"]
-    except:
-        # Fallback to hardcoded token (development)
-        return "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"
-
+# Use free API without token
 API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
 
-def generate_image_simple(prompt, api_token=None):
-    """Simple image generation that works"""
+def generate_image_free(prompt):
+    """Generate image using free API (no token needed)"""
     headers = {"Content-Type": "application/json"}
-    if api_token:
-        headers["Authorization"] = f"Bearer {api_token}"
-    
     payload = {"inputs": prompt}
     
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=120)
         
         if response.status_code == 200:
             image = Image.open(io.BytesIO(response.content))
             return image, None
         elif response.status_code == 503:
-            return None, "🕐 Model is loading. Please wait 1-2 minutes and try again."
-        elif response.status_code == 403:
-            return None, "🔒 Access denied. Token may be invalid or expired."
+            return None, "🕐 Model is loading. Please wait 2-3 minutes and try again."
         elif response.status_code == 429:
-            return None, "⚠️ Too many requests. Please wait a moment."
+            return None, "⚠️ Too many requests. Please wait 10-15 minutes before trying again."
+        elif response.status_code == 401:
+            return None, "🔒 Authentication error. Using free tier instead."
         else:
-            return None, f"❌ Error {response.status_code}. Try again in a few minutes."
+            try:
+                error_data = response.json()
+                error_msg = error_data.get('error', f'HTTP {response.status_code}')
+                return None, f"❌ {error_msg}"
+            except:
+                return None, f"❌ Error {response.status_code}. Please try again later."
+                
     except requests.exceptions.Timeout:
-        return None, "⏰ Request timeout. Please try again."
+        return None, "⏰ Request timeout. The model might be slow. Try again."
     except Exception as e:
-        return None, f"❌ Network error: {str(e)}"
+        return None, f"❌ Connection error: {str(e)}"
 
 def main():
-    # Get API token automatically
-    api_token = get_api_token()
-    
     # Header
     st.title("🎨 AI Image Generator")
     st.subheader("สร้างภาพสวยๆ ด้วย AI จาก Text Prompt")
     
+    # Info banner
+    st.info("🆓 **Free Version** - Using Hugging Face free API (no token required)")
+    
     # Sidebar
     with st.sidebar:
         st.header("⚙️ Settings")
-        st.info("🤖 Using Stable Diffusion v1.5")
+        st.info("🤖 Stable Diffusion v1.5 (Free Tier)")
         
-        # Show token status
-        if api_token and api_token.startswith("hf_"):
-            st.success("🟢 API Token Loaded Successfully!")
-            st.markdown("✅ Unlimited generations")
-            st.markdown("✅ Faster processing")
-            st.markdown("✅ Higher priority")
-        else:
-            st.warning("🟡 Using Free Tier")
-            st.markdown("⚠️ Limited requests per hour")
-        
-        # Manual token override (optional)
-        manual_token = st.text_input(
-            "🔧 Override Token (Optional)", 
-            type="password",
-            help="Leave empty to use default token"
-        )
-        
-        if manual_token:
-            api_token = manual_token
-            st.info("Using manual token override")
+        st.markdown("**Free Tier Limitations:**")
+        st.markdown("⏱️ Slower processing (1-2 minutes)")
+        st.markdown("🔄 Limited requests per hour")
+        st.markdown("⏳ May need to wait if busy")
         
         st.markdown("---")
         st.markdown("**Status:**")
-        st.markdown("✅ Fast API-based generation")
+        st.markdown("✅ No token required")
         st.markdown("✅ No server memory usage")
-        st.markdown("✅ Reliable and stable")
+        st.markdown("✅ Works for everyone")
+        
+        # Wait time info
+        st.markdown("---")
+        st.markdown("**💡 Tips for Free Tier:**")
+        st.markdown("• Be patient - may take 1-3 minutes")
+        st.markdown("• Try during off-peak hours")
+        st.markdown("• Use simple, clear prompts")
+        st.markdown("• Wait between requests")
     
     # Main content
     col1, col2 = st.columns([1, 1])
@@ -102,82 +89,75 @@ def main():
             help="Describe the image you want to create"
         )
         
-        # Simple quality enhancement
-        enhance_quality = st.checkbox("✨ Enhance prompt automatically", value=True)
-        
         # Generate button
-        if st.button("🚀 Generate Image", type="primary", use_container_width=True):
+        if st.button("🚀 Generate Image (Free)", type="primary", use_container_width=True):
             if len(prompt.strip()) < 3:
                 st.error("Please enter a prompt with at least 3 characters")
             else:
-                # Store in session state to trigger generation
-                st.session_state.generate_request = True
+                st.session_state.generate_now = True
                 st.session_state.current_prompt = prompt
-                st.session_state.enhance_quality = enhance_quality
                 st.rerun()
         
         # Example prompts
         st.subheader("💡 Try These Prompts")
         examples = [
-            "beautiful landscape with mountains and trees",
-            "cute cartoon robot with colorful design",
-            "professional business portrait, modern style",
-            "fantasy castle in magical forest",
-            "modern city skyline at sunset",
-            "abstract art with vibrant colors",
-            "cute anime character, colorful hair",
-            "vintage car in retro style, detailed"
+            "beautiful sunset over mountains",
+            "cute cartoon cat with blue eyes",
+            "modern city at night",
+            "peaceful forest landscape",
+            "colorful abstract art",
+            "vintage bicycle in garden",
+            "fantasy castle on hill",
+            "space astronaut floating"
         ]
         
         for i, example in enumerate(examples):
-            if st.button(f"📝 {example[:35]}...", key=f"ex_{i}"):
-                st.session_state.selected_example = example
+            if st.button(f"📝 {example}", key=f"ex_{i}"):
+                st.session_state.example_prompt = example
                 st.rerun()
         
-        # Apply selected example
-        if 'selected_example' in st.session_state:
-            prompt = st.session_state.selected_example
-            del st.session_state.selected_example
+        if 'example_prompt' in st.session_state:
+            prompt = st.session_state.example_prompt
+            del st.session_state.example_prompt
             st.rerun()
     
     with col2:
         st.header("🖼️ Generated Image")
         
-        # Handle generation request
-        if st.session_state.get('generate_request', False):
-            st.session_state.generate_request = False
+        # Handle generation
+        if st.session_state.get('generate_now', False):
+            st.session_state.generate_now = False
             
             current_prompt = st.session_state.get('current_prompt', prompt)
-            enhance = st.session_state.get('enhance_quality', True)
             
-            # Enhance prompt if requested
-            if enhance:
-                enhanced_prompt = f"{current_prompt}, high quality, detailed, beautiful"
-            else:
-                enhanced_prompt = current_prompt
+            # Enhanced prompt for better results
+            enhanced_prompt = f"{current_prompt}, high quality, detailed"
             
-            # Show what we're generating
-            with st.expander("🔍 Generating with prompt:"):
+            with st.expander("🔍 Enhanced prompt:"):
                 st.code(enhanced_prompt)
             
-            # Generate image
-            with st.spinner("🎨 Creating your image... (20-40 seconds)"):
+            # Generate with longer progress bar for free tier
+            with st.spinner("🎨 Generating your image... This may take 1-3 minutes on free tier"):
                 progress = st.progress(0)
                 status = st.empty()
                 
-                # Simulate progress
-                for i in range(100):
-                    progress.progress(i + 1)
+                # Longer progress simulation for free tier
+                for i in range(120):
+                    progress.progress(min(i + 1, 100))
                     if i < 20:
-                        status.text("📡 Sending request...")
+                        status.text("📡 Connecting to Hugging Face...")
+                    elif i < 40:
+                        status.text("🕐 Waiting in queue...")
                     elif i < 80:
                         status.text("🎨 AI is creating your image...")
+                    elif i < 100:
+                        status.text("✨ Finalizing...")
                     else:
-                        status.text("✨ Almost done...")
-                    time.sleep(0.15)
+                        status.text("⏳ Almost ready...")
+                    time.sleep(0.5)  # Slower for free tier
                 
                 # Actual generation
-                image, error = generate_image_simple(enhanced_prompt, api_token)
+                image, error = generate_image_free(enhanced_prompt)
                 
                 progress.empty()
                 status.empty()
@@ -186,10 +166,7 @@ def main():
                 st.image(image, caption=f"Generated: {current_prompt}", use_column_width=True)
                 st.success("✅ Image generated successfully!")
                 
-                # Image info
-                st.info(f"📏 Size: {image.size[0]}x{image.size[1]} pixels")
-                
-                # Download button
+                # Download
                 buf = io.BytesIO()
                 image.save(buf, format='PNG')
                 buf.seek(0)
@@ -197,74 +174,75 @@ def main():
                 st.download_button(
                     "💾 Download Image",
                     data=buf,
-                    file_name=f"ai_image_{int(time.time())}.png",
+                    file_name=f"ai_generated_{int(time.time())}.png",
                     mime="image/png",
                     use_container_width=True
                 )
                 
-                # Store for persistence
                 st.session_state.last_image = image
                 st.session_state.last_prompt = current_prompt
                 
             else:
                 st.error(error if error else "Failed to generate image")
                 
-                # Helpful suggestions based on error
-                if "403" in str(error):
-                    st.info("💡 API token issue. Token may be invalid or need different permissions.")
-                elif "loading" in str(error).lower():
-                    st.info("💡 The AI model is starting up. Please wait 2-3 minutes and try again.")
+                # Specific suggestions for free tier
+                if "loading" in str(error).lower():
+                    st.info("💡 Model is starting up. Wait 2-3 minutes and try again.")
+                    st.info("🕐 Free tier models sleep when not used and take time to wake up.")
                 elif "requests" in str(error).lower():
-                    st.info("💡 Rate limit reached. Please wait a moment before trying again.")
+                    st.info("💡 Free tier has hourly limits. Try again in 10-15 minutes.")
+                    st.info("⏰ Peak hours (9 AM - 6 PM UTC) are busiest.")
                 else:
-                    st.info("💡 Try a simpler prompt or wait a moment before trying again.")
+                    st.info("💡 Try a simpler prompt or wait a few minutes.")
+                    st.info("🔄 Free tier can be unpredictable during busy times.")
         
-        # Show last generated image if available
         elif 'last_image' in st.session_state:
             st.image(
-                st.session_state.last_image, 
-                caption=f"Last generated: {st.session_state.last_prompt}", 
+                st.session_state.last_image,
+                caption=f"Last: {st.session_state.last_prompt}",
                 use_column_width=True
             )
         else:
-            st.info("👆 Enter a prompt above and click 'Generate Image'")
+            st.info("👆 Enter a prompt and click 'Generate Image'")
             st.image(
-                "https://via.placeholder.com/512x512/f0f0f0/cccccc?text=Your+AI+Image+Here",
-                caption="Your generated image will appear here",
+                "https://via.placeholder.com/512x512/e8f4f8/2c5282?text=Free+AI+Image+Generator",
+                caption="Your AI-generated image will appear here",
                 use_column_width=True
             )
     
-    # Tips
-    with st.expander("💡 Tips for Better Results"):
+    # Tips for free tier
+    with st.expander("💡 Free Tier Tips & Troubleshooting"):
         st.markdown("""
-        **Great prompt examples:**
-        - "Beautiful sunset over ocean waves, digital art, high quality"
-        - "Cute cartoon cat wearing glasses, colorful, detailed"
-        - "Modern architecture building, minimalist design, clean"
-        - "Fantasy dragon in mystical forest, detailed, epic"
+        **🕐 If generation is slow or fails:**
+        - **Model Loading**: Wait 2-3 minutes if you see "Model is loading"
+        - **Rate Limits**: Free tier has hourly limits, try again later
+        - **Peak Hours**: Avoid 9 AM - 6 PM UTC for faster response
+        - **Simple Prompts**: Use clear, simple descriptions for better success
         
-        **Prompt engineering tips:**
-        - Be specific and descriptive
-        - Add style keywords: "digital art", "realistic", "cartoon", "anime"
-        - Include quality words: "detailed", "beautiful", "high quality"
-        - Describe colors, lighting, and mood
-        - For people: describe age, clothing, expression
-        - For scenes: describe time of day, weather, atmosphere
+        **✅ Best practices for free tier:**
+        - Use during off-peak hours (evenings/weekends)
+        - Keep prompts under 50 words
+        - Wait at least 1 minute between requests
+        - Be patient - free tier prioritizes paid users
+        
+        **🎯 Good prompt examples:**
+        - "cat in garden" ✅ Simple and clear
+        - "beautiful landscape" ✅ Basic but effective  
+        - "cute cartoon robot" ✅ Specific but not complex
         """)
     
     # Footer
     st.markdown("---")
     st.markdown(
         "<div style='text-align: center; color: #666;'>"
-        "<p>🤖 Powered by Stable Diffusion via Hugging Face API</p>"
-        "<p>🔒 Token automatically loaded for seamless experience</p>"
-        "</div>", 
+        "<p>🆓 <strong>Free AI Image Generator</strong> using Hugging Face</p>"
+        "<p>⚡ No registration required | No token needed | Just pure AI magic!</p>"
+        "</div>",
         unsafe_allow_html=True
     )
 
 if __name__ == "__main__":
-    # Initialize session state
-    if 'generate_request' not in st.session_state:
-        st.session_state.generate_request = False
+    if 'generate_now' not in st.session_state:
+        st.session_state.generate_now = False
     
     main()
